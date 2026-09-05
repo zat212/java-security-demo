@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: securitydemo
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/auth_db}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root1234}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+
+server:
+  port: 8080
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:9a4f2c8d7e1b3f5a8c6d4e2f0a1b3c5d7e9f1a3b5c7d9e1f3a5b7c9d1e3f5a7b}
+    access-expiration-ms: 900000 # 15 mins
+    refresh-expiration-ms: 604800000 # 7 days
+    refresh-cookie-name: refreshToken
+    cookie-secure: ${COOKIE_SECURE:false} # Production (HTTPS) ရောက်လျှင် 'true' သို့ ပြောင်းပါ
+    cookie-samesite: ${COOKIE_SAMESITE:Lax} # Cross-Domain Cross-Site ဖြစ်လျှင် 'None' သို့ ပြောင်းပါ
+
+google:
+  client-id: ${GOOGLE_CLIENT_ID:737709687966-9gq2dcrr9s3f9r5htjlnbfdlge9hfdmn.apps.googleusercontent.com}
