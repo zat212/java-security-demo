@@ -14,6 +14,20 @@ spring:
       hibernate:
         format_sql: true
 
+  # ===== Spring Mail Configuration (SMTP) =====
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME:zayhtoonaing37@gmail.com} # သင်၏ Gmail Email Address
+    password: ${MAIL_PASSWORD:qgemzcqvahfgmnlk}   # Google မှ ရယူထားသော 16-digit App Password
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+
 server:
   port: 8080
 

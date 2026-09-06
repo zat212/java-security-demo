@@ -3,6 +3,8 @@ package org.myjavasecurity.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.LocalDateTime;
+
 @Entity
 @Table(name = "users", indexes = {
         @Index(name = "idx_user_email", columnList = "email")
@@ -25,6 +27,12 @@ public class User {
     private String password; // Google Auth သမားများအတွက် Nullable
 
     private String fullName;
+
+    @Column(name = "reset_password_token")
+    private String resetPasswordToken;
+
+    @Column(name = "reset_password_token_expiry")
+    private LocalDateTime resetPasswordTokenExpiry;
 
     private String bio;
 

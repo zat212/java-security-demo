@@ -10,6 +10,7 @@ import org.myjavasecurity.entity.RefreshToken;
 import org.myjavasecurity.entity.User;
 import org.myjavasecurity.repository.UserRepository;
 import org.myjavasecurity.security.JwtUtils;
+import org.myjavasecurity.service.EmailService;
 import org.myjavasecurity.service.RefreshTokenService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -19,6 +20,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.Map;
 
@@ -30,6 +32,7 @@ public class AuthController {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtils jwtUtils;
     private final RefreshTokenService refreshTokenService;
+    private final EmailService emailService;
 
     @Value("${google.client-id}")
     private String googleClientId;
@@ -37,11 +40,12 @@ public class AuthController {
     public AuthController(UserRepository userRepository,
                           PasswordEncoder passwordEncoder,
                           JwtUtils jwtUtils,
-                          RefreshTokenService refreshTokenService) {
+                          RefreshTokenService refreshTokenService, EmailService emailService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtils = jwtUtils;
         this.refreshTokenService = refreshTokenService;
+        this.emailService = emailService;
     }
 
     @PostMapping("/register")
@@ -152,6 +156,111 @@ public class AuthController {
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(e.getMessage());
         }
+    }
+
+    @PutMapping("/profile")
+    public ResponseEntity<?> updateProfile(@RequestBody Map<String, String> request, HttpServletRequest httpRequest) {
+        try {
+            // JwtUtils သို့မဟုတ် SecurityContextHolder မှတစ်ဆင့် Login ဝင်ထားသော User ရဲ့ Email ကို ယူမည်
+            String authHeader = httpRequest.getHeader("Authorization");
+            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Unauthorized");
+            }
+
+            String token = authHeader.substring(7);
+            String email = jwtUtils.getEmailFromToken(token); // JwtUtils ထဲတွင် getEmailFromToken Method ရှိရမည်
+
+            User user = userRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            // Name သို့မဟုတ် Profile Picture ကို Update ပြုလုပ်ခြင်း
+            if (request.containsKey("fullName")) {
+                user.setFullName(request.get("fullName"));
+            }
+            if (request.containsKey("profilePicture")) {
+                user.setProfilePicture(request.get("profilePicture"));
+            }
+            userRepository.save(user);
+            return ResponseEntity.ok(Map.of(
+                    "message", "Profile updated successfully",
+                    "fullName", user.getFullName(),
+                    "email", user.getEmail(),
+                    "profilePicture", user.getProfilePicture() != null ? user.getProfilePicture() : ""
+            ));
+
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Profile update failed: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/me")
+    public ResponseEntity<?> getCurrentUser(HttpServletRequest httpRequest) {
+        String authHeader = httpRequest.getHeader("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Unauthorized");
+        }
+
+        String token = authHeader.substring(7);
+        String email = jwtUtils.getEmailFromToken(token);
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        return ResponseEntity.ok(Map.of(
+                "id", user.getId(),
+                "email", user.getEmail(),
+                "fullName", user.getFullName() != null ? user.getFullName() : "",
+                "profilePicture", user.getProfilePicture() != null ? user.getProfilePicture() : "",
+                "provider", user.getProvider()
+        ));
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(@RequestBody Map<String, String> request) {
+        String email = request.get("email");
+        User user = userRepository.findByEmail(email).orElse(null);
+
+        // Security ရာဇဝင်အရ Email မရှိသော်လည်း Request အောင်မြင်ကြောင်း ပြန်ပြနိုင်သည် (Email Enumeration ကာကွယ်ရန်)
+        if (user != null) {
+            // ဂဏန်း ၆ လုံးပါ OTP Generate လုပ်ခြင်း
+            String otp = String.valueOf((int) ((Math.random() * (900000)) + 100000));
+
+            user.setResetPasswordToken(otp);
+            user.setResetPasswordTokenExpiry(LocalDateTime.now().plusMinutes(10)); // ၁၀ မိနစ် သက်တမ်း
+            userRepository.save(user);
+
+            emailService.sendResetPasswordOtp(email, otp);
+        }
+
+        return ResponseEntity.ok("If the email exists, a reset code has been sent.");
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@RequestBody Map<String, String> request) {
+        String email = request.get("email");
+        String otp = request.get("otp");
+        String newPassword = request.get("newPassword");
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // OTP မှန်မမှန် စစ်ဆေးခြင်း
+        if (user.getResetPasswordToken() == null || !user.getResetPasswordToken().equals(otp)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid OTP code");
+        }
+
+        // OTP သက်တမ်း ကုန်/မကုန် စစ်ဆေးခြင်း
+        if (user.getResetPasswordTokenExpiry().isBefore(LocalDateTime.now())) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("OTP code has expired");
+        }
+
+        // Password အသစ် ပြောင်းလဲပြီး OTP များကို ပြန်ဖျက်ခြင်း
+        user.setPassword(passwordEncoder.encode(newPassword));
+        user.setResetPasswordToken(null);
+        user.setResetPasswordTokenExpiry(null);
+        userRepository.save(user);
+
+        return ResponseEntity.ok("Password reset successfully. You can now login with your new password.");
     }
 
     @PostMapping("/logout")
