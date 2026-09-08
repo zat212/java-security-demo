@@ -28,7 +28,6 @@ public class UserController {
         return ResponseEntity.ok(user);
     }
 
-    // User can update ONLY their own profile
     @PutMapping("/{id}")
     public ResponseEntity<?> updateProfile(@PathVariable Long id,
                                            @RequestBody Map<String, String> updates,

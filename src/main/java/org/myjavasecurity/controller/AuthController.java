@@ -102,10 +102,8 @@ public class AuthController {
             String name = (String) payload.get("name");
             String picture = (String) payload.get("picture");
 
-            // User ရှိပြီးသားဆိုလျှင် ပြန်ယူမည်၊ မရှိသေးပါက ဆောက်မည်
             User user = userRepository.findByEmail(email)
                     .map(existingUser -> {
-                        // Profile picture သို့မဟုတ် Name ပြောင်းသွားပါက ခေတ္တ Update လုပ်ပေးနိုင်သည်
                         if (existingUser.getProfilePicture() == null) {
                             existingUser.setProfilePicture(picture);
                             return userRepository.save(existingUser);
@@ -161,7 +159,6 @@ public class AuthController {
     @PutMapping("/profile")
     public ResponseEntity<?> updateProfile(@RequestBody Map<String, String> request, HttpServletRequest httpRequest) {
         try {
-            // JwtUtils သို့မဟုတ် SecurityContextHolder မှတစ်ဆင့် Login ဝင်ထားသော User ရဲ့ Email ကို ယူမည်
             String authHeader = httpRequest.getHeader("Authorization");
             if (authHeader == null || !authHeader.startsWith("Bearer ")) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Unauthorized");
