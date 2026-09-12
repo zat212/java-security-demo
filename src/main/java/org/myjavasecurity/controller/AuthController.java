@@ -1,6 +1,5 @@
 package org.myjavasecurity.controller;
 
-
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
 import com.google.api.client.http.javanet.NetHttpTransport;
@@ -17,6 +16,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
@@ -40,7 +40,8 @@ public class AuthController {
     public AuthController(UserRepository userRepository,
                           PasswordEncoder passwordEncoder,
                           JwtUtils jwtUtils,
-                          RefreshTokenService refreshTokenService, EmailService emailService) {
+                          RefreshTokenService refreshTokenService,
+                          EmailService emailService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtils = jwtUtils;
@@ -48,6 +49,7 @@ public class AuthController {
         this.emailService = emailService;
     }
 
+    // 1. Public User Registration
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody Map<String, String> request) {
         String email = request.get("email");
@@ -60,24 +62,48 @@ public class AuthController {
                 .password(passwordEncoder.encode(request.get("password")))
                 .fullName(request.get("fullName"))
                 .provider(User.AuthProvider.LOCAL)
+                .role(User.Role.USER) // Default role သတ်မှတ်ပေးထားပါသည်
                 .build();
         userRepository.save(user);
 
         return ResponseEntity.ok("User registered successfully");
     }
 
+    // 2. Admin Registration (ADMIN Role ရှိသူသာ ခေါ်ယူခွင့်ရှိမည်)
+    @PostMapping("/admin/register")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> registerAdmin(@RequestBody Map<String, String> request) {
+        String email = request.get("email");
+        if (userRepository.findByEmail(email).isPresent()) {
+            return ResponseEntity.badRequest().body("Email already exists");
+        }
+
+        User admin = User.builder()
+                .email(email)
+                .password(passwordEncoder.encode(request.get("password")))
+                .fullName(request.get("fullName"))
+                .provider(User.AuthProvider.LOCAL)
+                .role(User.Role.ADMIN) // Role ကို ADMIN ဟု သတ်မှတ်ပါသည်
+                .build();
+        userRepository.save(admin);
+
+        return ResponseEntity.status(HttpStatus.CREATED).body("Admin registered successfully");
+    }
+
+    // 3. Email/Password Login
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody Map<String, String> request) {
         User user = userRepository.findByEmail(request.get("email"))
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        if (!passwordEncoder.matches(request.get("password"), user.getPassword())) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid credentials");
+        if (user.getPassword() == null || !passwordEncoder.matches(request.get("password"), user.getPassword())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Password is wrong!!");
         }
 
         return issueTokens(user);
     }
 
+    // 4. Google Login
     @PostMapping("/google")
     public ResponseEntity<?> googleLogin(@RequestBody Map<String, String> request) {
         try {
@@ -116,29 +142,34 @@ public class AuthController {
                                     .fullName(name)
                                     .profilePicture(picture)
                                     .provider(User.AuthProvider.GOOGLE)
+                                    .role(User.Role.USER) // Google user အား Default USER role ပေးပါသည်
                                     .build()
                     ));
 
             return issueTokens(user);
 
         } catch (Exception e) {
-            e.printStackTrace(); // Console Log တွင် Error အတိအကျ ကြည့်ရန်
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body("Google Authentication Failed: " + e.getMessage());
         }
     }
 
+    // 5. Refresh Token Endpoint
     @PostMapping("/refresh")
     public ResponseEntity<?> refreshToken(HttpServletRequest request) {
         String oldRefreshToken = jwtUtils.getRefreshTokenFromCookies(request);
 
         if (oldRefreshToken == null || oldRefreshToken.isBlank()) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Refresh Token missing in cookie");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Missing Password");
         }
 
         try {
             RefreshToken newRefreshToken = refreshTokenService.rotateRefreshToken(oldRefreshToken);
-            String newAccessToken = jwtUtils.generateAccessToken(newRefreshToken.getUser().getEmail());
+
+            // role ကို user ထံမှ ရယူ၍ JWT Token ထုတ်ပေးပါမည်
+            String roleStr = newRefreshToken.getUser().getRole().name();
+            String newAccessToken = jwtUtils.generateAccessToken(newRefreshToken.getUser().getEmail(), roleStr);
 
             ResponseCookie newCookie = jwtUtils.generateRefreshTokenCookie(newRefreshToken.getToken());
 
@@ -156,6 +187,7 @@ public class AuthController {
         }
     }
 
+    // 6. Profile Update
     @PutMapping("/profile")
     public ResponseEntity<?> updateProfile(@RequestBody Map<String, String> request, HttpServletRequest httpRequest) {
         try {
@@ -165,12 +197,11 @@ public class AuthController {
             }
 
             String token = authHeader.substring(7);
-            String email = jwtUtils.getEmailFromToken(token); // JwtUtils ထဲတွင် getEmailFromToken Method ရှိရမည်
+            String email = jwtUtils.getEmailFromToken(token);
 
             User user = userRepository.findByEmail(email)
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
-            // Name သို့မဟုတ် Profile Picture ကို Update ပြုလုပ်ခြင်း
             if (request.containsKey("fullName")) {
                 user.setFullName(request.get("fullName"));
             }
@@ -190,13 +221,14 @@ public class AuthController {
         }
     }
 
+    // 7. Get Current Authenticated User Details
     @GetMapping("/me")
     public ResponseEntity<?> getCurrentUser(HttpServletRequest httpRequest) {
         String authHeader = httpRequest.getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Unauthorized");
         }
-
+        System.out.println("this is working always");
         String token = authHeader.substring(7);
         String email = jwtUtils.getEmailFromToken(token);
 
@@ -208,22 +240,22 @@ public class AuthController {
                 "email", user.getEmail(),
                 "fullName", user.getFullName() != null ? user.getFullName() : "",
                 "profilePicture", user.getProfilePicture() != null ? user.getProfilePicture() : "",
-                "provider", user.getProvider()
+                "provider", user.getProvider(),
+                "role", user.getRole().name()
         ));
     }
 
+    // 8. Forgot Password (OTP Generation)
     @PostMapping("/forgot-password")
     public ResponseEntity<?> forgotPassword(@RequestBody Map<String, String> request) {
         String email = request.get("email");
         User user = userRepository.findByEmail(email).orElse(null);
 
-        // Security ရာဇဝင်အရ Email မရှိသော်လည်း Request အောင်မြင်ကြောင်း ပြန်ပြနိုင်သည် (Email Enumeration ကာကွယ်ရန်)
         if (user != null) {
-            // ဂဏန်း ၆ လုံးပါ OTP Generate လုပ်ခြင်း
             String otp = String.valueOf((int) ((Math.random() * (900000)) + 100000));
 
             user.setResetPasswordToken(otp);
-            user.setResetPasswordTokenExpiry(LocalDateTime.now().plusMinutes(10)); // ၁၀ မိနစ် သက်တမ်း
+            user.setResetPasswordTokenExpiry(LocalDateTime.now().plusMinutes(10));
             userRepository.save(user);
 
             emailService.sendResetPasswordOtp(email, otp);
@@ -232,6 +264,7 @@ public class AuthController {
         return ResponseEntity.ok("If the email exists, a reset code has been sent.");
     }
 
+    // 9. Reset Password using OTP
     @PostMapping("/reset-password")
     public ResponseEntity<?> resetPassword(@RequestBody Map<String, String> request) {
         String email = request.get("email");
@@ -241,17 +274,14 @@ public class AuthController {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        // OTP မှန်မမှန် စစ်ဆေးခြင်း
         if (user.getResetPasswordToken() == null || !user.getResetPasswordToken().equals(otp)) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid OTP code");
         }
 
-        // OTP သက်တမ်း ကုန်/မကုန် စစ်ဆေးခြင်း
         if (user.getResetPasswordTokenExpiry().isBefore(LocalDateTime.now())) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("OTP code has expired");
         }
 
-        // Password အသစ် ပြောင်းလဲပြီး OTP များကို ပြန်ဖျက်ခြင်း
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setResetPasswordToken(null);
         user.setResetPasswordTokenExpiry(null);
@@ -260,6 +290,7 @@ public class AuthController {
         return ResponseEntity.ok("Password reset successfully. You can now login with your new password.");
     }
 
+    // 10. Logout Endpoint
     @PostMapping("/logout")
     public ResponseEntity<?> logout() {
         ResponseCookie cleanCookie = jwtUtils.getCleanRefreshTokenCookie();
@@ -268,13 +299,20 @@ public class AuthController {
                 .body("Logged out successfully");
     }
 
+    // Helper Method to Issue Access and Refresh Tokens
     private ResponseEntity<?> issueTokens(User user) {
-        String accessToken = jwtUtils.generateAccessToken(user.getEmail());
+        // generateAccessToken ခေါ်ဆိုရာတွင် Email အပြင် Role ပါ ထည့်သွင်းပေးပါသည်
+        String accessToken = jwtUtils.generateAccessToken(user.getEmail(), user.getRole().name());
         RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
         ResponseCookie refreshTokenCookie = jwtUtils.generateRefreshTokenCookie(refreshToken.getToken());
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, refreshTokenCookie.toString())
-                .body(Map.of("accessToken", accessToken, "userId", user.getId(), "email", user.getEmail()));
+                .body(Map.of(
+                        "accessToken", accessToken,
+                        "userId", user.getId(),
+                        "email", user.getEmail(),
+                        "role", user.getRole().name()
+                ));
     }
 }

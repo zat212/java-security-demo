@@ -40,7 +40,21 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**").permitAll()
+                        // Public Endpoints
+                        .requestMatchers(
+                                "/api/auth/login",
+                                "/api/auth/register",
+                                "/api/auth/refresh",
+                                "/api/auth/logout",
+                                "/api/auth/google",
+                                "/api/auth/forgot-password",
+                                "/api/auth/reset-password"
+                        ).permitAll()
+
+                        // Protected Endpoint for Admin
+                        .requestMatchers("/api/auth/admin/register").hasRole("ADMIN")
+
+                        // Authenticated User Endpoints
                         .requestMatchers(HttpMethod.GET, "/api/users/**").authenticated()
                         .anyRequest().authenticated()
                 );

@@ -23,8 +23,8 @@ public class User {
     @Column(unique = true, nullable = false)
     private String email;
 
-    @Column(nullable = true) // password ကို null လက်ခံအောင် ပြင်ပါ
-    private String password; // Google Auth သမားများအတွက် Nullable
+    @Column(nullable = true) // Google OAuth သမားများအတွက် Password ကို null လက်ခံပါမည်
+    private String password;
 
     private String fullName;
 
@@ -42,5 +42,11 @@ public class User {
     @Column(nullable = false)
     private AuthProvider provider;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Role role;
+
     public enum AuthProvider { LOCAL, GOOGLE }
+
+    public enum Role { USER, ADMIN }
 }
