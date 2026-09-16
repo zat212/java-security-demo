@@ -1,4 +1,4 @@
-name: Deploy Spring Boot Application to AWS EC2
+name: Docker CI/CD Pipeline to AWS EC2
 
 on:
   push:
@@ -6,38 +6,58 @@ on:
       - main
 
 jobs:
-  build-and-deploy:
+  build-and-push:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
+      # 1. Docker Hub သို့ Login ဝင်ခြင်း
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
         with:
-          java-version: '21'
-          distribution: 'temurin'
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Deploy to EC2
+      # 2. GitHub Runner ပေါ်တွင် Docker Image Build လုပ်ပြီး Docker Hub သို့ Push တင်ခြင်း
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/java-security-demo:latest
+
+  deploy-to-ec2:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            pkill -f 'java -jar' || true
-            cd ~/java-security-demo
-            git pull origin main
-            ./mvnw clean package -DskipTests
-            
-            DB_URL="${{ secrets.DB_URL }}" \
-            DB_USERNAME="${{ secrets.DB_USERNAME }}" \
-            DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
-            MAIL_USERNAME="${{ secrets.MAIL_USERNAME }}" \
-            MAIL_PASSWORD="${{ secrets.MAIL_PASSWORD }}" \
-            JWT_SECRET="${{ secrets.JWT_SECRET }}" \
-            GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
-            nohup java -jar target/*.jar > app.log 2>&1 < /dev/null &
-            
-            sleep 3
+            # 1. EC2 ပေါ်တွင် ယခင် ပြေးနေသော Container အဟောင်းကို ပိတ်၍ ဖျက်ခြင်း
+            docker stop java-security-app || true
+            docker rm java-security-app || true
+
+            # 2. Docker Hub မှ Image အသစ် Pull ဆွဲခြင်း
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/java-security-demo:latest
+
+            # 3. Environment Variables များနှင့်အတူ Container အသစ် Background တွင် Run ခြင်း
+            docker run -d \
+              --name java-security-app \
+              --restart always \
+              -p 8080:8080 \
+              -e DB_URL="${{ secrets.DB_URL }}" \
+              -e DB_USERNAME="${{ secrets.DB_USERNAME }}" \
+              -e DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
+              -e MAIL_USERNAME="${{ secrets.MAIL_USERNAME }}" \
+              -e MAIL_PASSWORD="${{ secrets.MAIL_PASSWORD }}" \
+              -e JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+              -e GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
+              ${{ secrets.DOCKERHUB_USERNAME }}/java-security-demo:latest
+
+            # 4. မလိုအပ်တော့သော Image အဟောင်းများကို ရှင်းထုတ်ခြင်း
+            docker image prune -f
