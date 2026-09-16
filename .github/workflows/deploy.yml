@@ -27,10 +27,8 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             pkill -f 'java -jar' || true
-            
             cd ~/java-security-demo
             git pull origin main
-            
             ./mvnw clean package -DskipTests
             
             DB_URL="${{ secrets.DB_URL }}" \
@@ -40,4 +38,6 @@ jobs:
             MAIL_PASSWORD="${{ secrets.MAIL_PASSWORD }}" \
             JWT_SECRET="${{ secrets.JWT_SECRET }}" \
             GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
-            nohup java -jar target/*.jar > app.log 2>&1 & disown
+            nohup java -jar target/*.jar > app.log 2>&1 < /dev/null &
+            
+            sleep 3
