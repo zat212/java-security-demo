@@ -31,14 +31,14 @@ jobs:
           script: |
             # 1. ရောက်ရှိနေသော Java Application Process ကို ရပ်တန့်ခြင်း
             pkill -f 'java -jar' || true
-
+            
             # 2. Project Folder ထဲ သွားပြီး Code အသစ် Pull ဆွဲခြင်း
             cd ~/java-security-demo
             git pull origin main
-
+            
             # 3. Project ကို Clean Build ပြုလုပ်ခြင်း
             ./mvnw clean package -DskipTests
-
+            
             # 4. Environment Variables များနှင့်အတူ App ကို Background တွင် ပြန် Run ခြင်း
             DB_URL="${{ secrets.DB_URL }}" \
             DB_USERNAME="${{ secrets.DB_USERNAME }}" \
@@ -47,4 +47,4 @@ jobs:
             MAIL_PASSWORD="${{ secrets.MAIL_PASSWORD }}" \
             JWT_SECRET="${{ secrets.JWT_SECRET }}" \
             GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
-            nohup java -jar target/*.jar > app.log 2>&1 &
+            nohup java -jar target/*.jar > app.log 2>&1 & disown
