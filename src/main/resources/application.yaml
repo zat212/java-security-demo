@@ -1,25 +1,29 @@
 spring:
   application:
     name: securitydemo
+
   datasource:
     url: ${DB_URL:jdbc:mysql://localhost:3306/auth_db}
     username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD}
+    password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
+
   jpa:
     hibernate:
-      ddl-auto: ${DDL_AUTO:update} # Production တွင် update ထက် validate / none ကို သုံးပါ
+      ddl-auto: ${DDL_AUTO:update}
     show-sql: false
     properties:
       hibernate:
         format_sql: true
+        # Production မှာ Database Hikari Connection Pool မလိုဘဲ သေမသွားစေရန် ထည့်သင့်သည့် Setting
+        dialect: org.hibernate.dialect.MySQLDialect
 
   # ===== Spring Mail Configuration (SMTP) =====
   mail:
-    host: smtp.gmail.com
-    port: 587
-    username: ${MAIL_USERNAME}
-    password: ${MAIL_PASSWORD}
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
@@ -29,16 +33,16 @@ spring:
             required: true
 
 server:
-  port: 8080
+  port: ${PORT:8080}
 
 app:
   jwt:
     secret: ${JWT_SECRET}
-    access-expiration-ms: 900000
-    refresh-expiration-ms: 604800000
+    access-expiration-ms: 900000 # 15 mins
+    refresh-expiration-ms: 604800000 # 7 days
     refresh-cookie-name: refreshToken
     cookie-secure: ${COOKIE_SECURE:false}
     cookie-samesite: ${COOKIE_SAMESITE:Lax}
 
 google:
-  client-id: ${GOOGLE_CLIENT_ID}
+  client-id: ${GOOGLE_CLIENT_ID:}
